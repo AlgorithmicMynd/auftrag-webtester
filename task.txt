@@ -1,0 +1,84 @@
+===================================================================
+  TASK CHECKLIST — Remaining work before final submission
+===================================================================
+
+✓ DONE: Configure AIRTABLE_TRIGGER_CONFIG in visual_qa.py
+-------------------------------------------------------------------
+  [x] Credentials filled in with real values from Airtable
+      - api_key: patUqrGwBoazZinsv...
+      - base_id: apphwncsSpj5PTIFX
+      - table_name: EMD Webseiten
+      - domain_field: Domain
+      - qa_result_field: Kontakt status
+  [x] Placeholder checks removed from run_domain() — write-back
+      now happens automatically when airtable_record_id is provided
+
+===================================================================
+  PENDING: Build the Airtable trigger integration
+===================================================================
+
+NEXT STEP 1 — Webhook Server (Option A — recommended)
+-------------------------------------------------------------------
+  Build a small HTTP server that listens for Airtable automation webhooks.
+
+  Responsibilities:
+    - Listen on POST /run-qa
+    - Parse JSON: { "record_id": "recXXX", "domain": "example.de" }
+    - Call: run_domain(domain, airtable_record_id=record_id)
+    - Return: { "status": "PASS"|"PARTIAL"|"FAIL" }
+    - write_qa_result_to_airtable() is called automatically inside run_domain()
+
+  Implementation suggestion:
+    Language: Python (Flask or FastAPI)
+    Endpoint: POST /run-qa
+    Body: { "record_id": str, "domain": str }
+    Response: { "status": str }
+
+  Deployment:
+    - Local machine (with ngrok for testing)
+    - VPS or cloud server
+    - Or use Airtable Scripting extension (Node.js)
+
+NEXT STEP 2 — Configure Airtable Automation
+-------------------------------------------------------------------
+  In the "EMD Webseiten" base, set up an automation:
+
+  Trigger:
+    - "When a button is clicked" on a field (or when record is created)
+    - Button should be on the same record that holds the domain
+
+  Action:
+    - Use "Send a webhook" or "Send a request to a webhook"
+    - POST to: {webhook_url}/run-qa
+    - Headers: Content-Type: application/json
+    - Body (JSON):
+      {
+        "record_id": {record_id},
+        "domain": {Domain}
+      }
+    - Wait for response (optional): check for "status" field
+
+  Testing:
+    - Click the button on a test record
+    - Webhook server should receive the request
+    - run_domain() executes
+    - "Kontakt status" field updates with PASS/PARTIAL/FAIL
+
+NEXT STEP 3 — Test end-to-end
+-------------------------------------------------------------------
+  1. Deploy webhook server (locally or to VPS)
+  2. Configure Airtable automation to call it
+  3. Click test button in Airtable EMD Webseiten table
+  4. Verify script runs (check console logs / screenshots folder)
+  5. Verify result written back to "Kontakt status" field
+
+===================================================================
+  COMPLETED INFRASTRUCTURE
+===================================================================
+  [x] run_domain(domain, airtable_record_id) — public callable
+  [x] write_qa_result_to_airtable(record_id, status) — auto write-back
+  [x] AIRTABLE_LEADS_CONFIG — test lead submissions (Leads Partner table)
+  [x] AIRTABLE_TRIGGER_CONFIG — trigger + result (EMD Webseiten table)
+  [x] Full 4-stage pipeline: screenshot → Gemini → form → Airtable checks
+  [x] AI_CONTEXT.md — reference doc for other AI models
+===================================================================
