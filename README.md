@@ -35,15 +35,17 @@ Each website receives a final verdict:
 
 ```
 .
-├── gui.py                  # GUI application (PySimpleGUI) -- recommended entry point
 ├── visual_qa.py            # Main QA orchestrator (4-stage pipeline)
 ├── form_automation.py      # Contact form navigation and submission logic
-├── airtable_verifier.py    # Airtable frontend check, API submission, and verification
+├── airtable_verifier.py    # Airtable checks (B1/B2/C verification)
 ├── gemini_analyzer.py      # Google Gemini vision API wrapper
-├── requirements_gui.txt    # Python dependencies
-├── run_gui.bat             # Windows one-click launcher (installs deps automatically)
-├── QUICK_START.txt         # Short setup guide
-├── data.csv                # Input: list of domains to test
+├── requirements.txt        # Python dependencies
+├── webhook-server/         # Flask webhook server
+│   ├── app.py              # Webhook endpoint for Airtable automation
+│   ├── Dockerfile          # Docker container config
+│   └── requirements.txt     # Flask dependencies
+├── .env.example            # Environment variables template
+├── data.csv                # Input: list of domains to test (CLI mode)
 ├── ui_report.csv           # Output: test results per domain
 └── screenshots/            # Output: full-page screenshots per domain
 ```
@@ -52,38 +54,62 @@ Each website receives a final verdict:
 
 ## How to Start
 
-### Option A: GUI (Recommended)
+### Option A: Webhook Server (Recommended for Production)
 
-Double-click **`run_gui.bat`** -- it automatically installs dependencies and launches the GUI.
+The webhook server listens for requests from Airtable and runs the QA pipeline automatically.
 
-Or run manually:
+**Prerequisites:**
+- Airtable automation configured (see COOLIFY_DEPLOYMENT.md)
+- Coolify account with deployed application
+- Environment variables set (AIRTABLE_LEADS_API_KEY, AIRTABLE_TRIGGER_API_KEY, etc.)
 
-```bash
-python gui.py
-```
+**How it works:**
+1. Sales employee changes "Kontakt status" to "to be tested" in Airtable
+2. Airtable automation sends webhook request to `/run-qa`
+3. Webhook server runs the QA pipeline
+4. Result (passed/failed) written back to "Kontakt status" field
+5. Error details (if any) written to "Kontakt error" field
 
-The GUI provides:
-- A text field to enter a single domain (e.g. `fensterreinigung-ulm.de`)
-- A file browser to select a CSV file with multiple domains
-- A "RUN TEST" button that runs the pipeline in the background
-- A progress bar and live output console
-- Buttons to open the generated report (`ui_report.csv`) and screenshots folder
+**For deployment instructions:** See [COOLIFY_DEPLOYMENT.md](COOLIFY_DEPLOYMENT.md)
 
-### Option B: Command Line
+### Option B: Command Line (Testing / Batch Mode)
+
+For testing or batch processing:
 
 ```bash
 python visual_qa.py
 ```
 
-This reads domains from `data.csv` (must have a `domain` column) in the same directory and writes results to `ui_report.csv`.
+This reads domains from `data.csv` (must have a `domain` column) and writes results to `ui_report.csv`.
+
+**Setup:**
+```bash
+pip install -r requirements.txt
+playwright install chromium
+cp .env.example .env
+# Edit .env with your Airtable API keys and Gemini API key (optional)
+python visual_qa.py
+```
+
+**Input:** `data.csv` with `domain` column  
+**Output:** `ui_report.csv` + screenshots in `screenshots/` folder
 
 ---
 
 ## Input Format
 
-**Single domain (GUI):** Enter the bare domain, e.g. `fensterreinigung-ulm.de`. The tool adds `https://` automatically.
+### Webhook Server (Option A)
+Input is received via HTTP POST:
+```json
+{
+  "record_id": "recXXXXXXXXXXXXXX",
+  "domain": "fensterreinigung-ulm.de"
+}
+```
+Sent by Airtable automation when "Kontakt status" = "to be tested"
 
-**CSV file (GUI or CLI):** A CSV with a `domain` column:
+### Command Line (Option B)
+Input is a CSV file with a `domain` column:
 
 ```csv
 domain
@@ -91,6 +117,8 @@ fensterreinigungbruchsal.de
 fensterreinigungstuttgart.de
 fensterreinigungulm.de
 ```
+
+**Note:** Domain should be bare (no `https://`); the tool adds it automatically.
 
 ---
 
@@ -120,94 +148,129 @@ Full-page PNG screenshots of each tested website, named by domain.
 
 ## Setup Requirements
 
-### For Developers (Technical Users)
+### For Webhook Server Deployment (Production)
+
+See [COOLIFY_DEPLOYMENT.md](COOLIFY_DEPLOYMENT.md) for complete setup instructions.
+
+**Quick summary:**
+- Git repository with code
+- Coolify account (or VPS)
+- 2 Airtable Personal Access Tokens
+- Optional: Google Gemini API key
+
+### For Local Testing (Command Line Mode)
 
 **Prerequisites:**
-- **Python 3.8+** -- [Download from python.org](https://www.python.org/downloads/)
-- **pip** -- Comes bundled with Python
-- **Git** (optional) -- Only if cloning from a repository
+- **Python 3.8+** — [Download from python.org](https://www.python.org/downloads/)
+- **pip** — Comes bundled with Python
+- **Git** — For version control (optional)
 
 **Installation:**
 
 ```bash
-# 1. Install Python dependencies
-pip install -r requirements_gui.txt
+# 1. Clone repository and install dependencies
+git clone <your-repo-url>
+cd test-cluade-api
+pip install -r requirements.txt
 
-# 2. Install the Playwright browser engine (one-time)
+# 2. Install Playwright browser engine (one-time)
 playwright install chromium
+
+# 3. Set up environment variables
+cp .env.example .env
+# Edit .env with your API keys
 ```
 
-**Dependencies installed by `requirements_gui.txt`:**
+**Dependencies in `requirements.txt`:**
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `PySimpleGUI` | >= 4.60.5 | Desktop GUI framework |
-| `pandas` | >= 1.3.0 | CSV reading and writing |
-| `playwright` | >= 1.40.0 | Headless browser automation |
-| `requests` | >= 2.28.0 | HTTP requests (Airtable API calls) |
-| `playwright-stealth` | >= 1.0.1 | Anti-bot detection bypass |
-| `google-generativeai` | >= 0.3.0 | Google Gemini vision API client |
-| `Pillow` | >= 9.0.0 | Image processing |
+| Package | Purpose |
+|---------|---------|
+| `pandas` | CSV reading and writing |
+| `playwright` | Headless browser automation |
+| `requests` | HTTP requests (Airtable API) |
+| `playwright-stealth` | Anti-bot detection bypass |
+| `google-generativeai` | Google Gemini vision API |
+| `Pillow` | Image processing |
+| `python-dotenv` | Environment variable loading |
+| `Flask` | Webhook server (if running locally) |
+| `gunicorn` | Production WSGI server |
 
-**Optional environment variable:**
+**Environment Variables:**
+
+Copy `.env.example` to `.env` and fill in:
 
 ```bash
-# Enables AI-powered visual analysis of screenshots
-# If not set, this stage is simply skipped
-set GEMINI_API_KEY=your_google_gemini_api_key
+# Required for test lead submissions
+AIRTABLE_LEADS_API_KEY=pat...
+AIRTABLE_LEADS_BASE_ID=appL4PpAWoTl3rEzE
+AIRTABLE_LEADS_TABLE=Leads Partner
+
+# Required for trigger + result write-back
+AIRTABLE_TRIGGER_API_KEY=pat...
+AIRTABLE_TRIGGER_BASE_ID=apphwncsSpj5PTIFX
+AIRTABLE_TRIGGER_TABLE=EMD Webseiten
+AIRTABLE_TRIGGER_DOMAIN_FIELD=Domain
+AIRTABLE_TRIGGER_RESULT_FIELD=Kontakt status
+AIRTABLE_TRIGGER_ERROR_FIELD=Kontakt error
+
+# Optional: Visual analysis with AI
+GEMINI_API_KEY=your_key_here
 ```
 
-You can get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+Get API keys from:
+- **Airtable:** airtable.com → Account Settings → Developer Hub
+- **Gemini:** aistudio.google.com/apikey
 
----
+### For End Users (Sales Team)
 
-### For Non-Technical Users (Marketing, QA Teams)
+**You need:**
+- Airtable account with edit access to "EMD Webseiten" table
+- Modern web browser
+- Nothing else!
 
-You do **not** need to install anything manually if a developer has already set up the machine. Just:
-
-1. **Double-click `run_gui.bat`** -- this handles everything automatically.
-2. Enter a domain or select a CSV file.
-3. Click **RUN TEST**.
-4. Click **Open Report** when done.
-
-**If this is a fresh machine with nothing installed:**
-
-1. **Install Python:**
-   - Go to [python.org/downloads](https://www.python.org/downloads/)
-   - Download the latest Python installer for Windows
-   - **Important:** Check the box that says "Add Python to PATH" during installation
-   - Click "Install Now"
-
-2. **Run the tool:**
-   - Double-click **`run_gui.bat`** in the project folder
-   - It will automatically install all required packages on first run
-   - If you see an error about Playwright browsers, open Command Prompt in the project folder and type:
-     ```
-     playwright install chromium
-     ```
-     Then double-click `run_gui.bat` again.
-
-That's it. No code editor, terminal knowledge, or Git required.
+Webhook server will be running in the cloud. Just change "Kontakt status" field to "to be tested" and wait for results.
 
 ---
 
 ## Configuration
 
-All configuration is hardcoded in the source files. There are no `.env` files to manage.
+All sensitive configuration (API keys, base IDs) is managed via environment variables. No hardcoding of secrets!
+
+### Environment Variables
+
+Set these in `.env` file or in your deployment platform (Coolify, Docker, etc.):
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `AIRTABLE_LEADS_API_KEY` | Yes | — | API key for test lead submissions |
+| `AIRTABLE_LEADS_BASE_ID` | No | `appL4PpAWoTl3rEzE` | Base ID for test leads |
+| `AIRTABLE_LEADS_TABLE` | No | `Leads Partner` | Table name for test leads |
+| `AIRTABLE_TRIGGER_API_KEY` | Yes | — | API key for result write-back |
+| `AIRTABLE_TRIGGER_BASE_ID` | No | `apphwncsSpj5PTIFX` | Base ID for trigger table |
+| `AIRTABLE_TRIGGER_TABLE` | No | `EMD Webseiten` | Table name for trigger |
+| `AIRTABLE_TRIGGER_DOMAIN_FIELD` | No | `Domain` | Field containing website URL |
+| `AIRTABLE_TRIGGER_RESULT_FIELD` | No | `Kontakt status` | Field for PASS/FAIL result |
+| `AIRTABLE_TRIGGER_ERROR_FIELD` | No | `Kontakt error` | Field for error messages |
+| `GEMINI_API_KEY` | No | — | Google Gemini API key (optional) |
+
+### Hardcoded Settings
+
+These are safe to modify in source code if needed:
 
 | Setting | Location | Default |
 |---------|----------|---------|
-| Airtable API Key | `visual_qa.py` line ~80 | Hardcoded |
-| Airtable Base ID | `visual_qa.py` line ~80 | `appL4PpAWoTl3rEzE` |
-| Airtable Table Name | `visual_qa.py` line ~80 | `Leads Partner` |
-| Input CSV path | `visual_qa.py` line ~70 | `data.csv` |
-| Output CSV path | `visual_qa.py` line ~71 | `ui_report.csv` |
-| Browser viewport | `visual_qa.py` | 1440 x 900 |
-| Navigation timeout | `visual_qa.py` | 30 seconds |
-| Gemini API Key | Environment variable | *(none -- stage skipped if unset)* |
-| Test form data | `form_automation.py` line ~28 | Company: "QA Automation", Name: "Test User", etc. |
+| Browser viewport | `visual_qa.py` line ~82 | 1440 x 900 |
+| Navigation timeout | `visual_qa.py` line ~82 | 30 seconds |
+| Airtable retry attempts | `visual_qa.py` line ~116 | 3 retries |
+| Airtable retry delay | `visual_qa.py` line ~117 | 4 seconds |
+| Test form data | `form_automation.py` line ~28 | Name: "QA Test", Email: qa+{run_id}@test.com |
 
-To change the Airtable configuration or test data, edit the relevant Python file directly.
+### For Webhook Server
+
+When deploying to Coolify or Docker, set environment variables in:
+- **Coolify:** Settings → Environment Variables
+- **Docker:** Use `-e` flag or environment file
+- **Local:** Edit `.env` file
 
 ---
 
