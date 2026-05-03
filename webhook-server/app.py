@@ -69,22 +69,26 @@ def run_qa():
 
         # STAGE 2: Run the QA pipeline
         try:
-            result = run_domain(domain, airtable_record_id=None)  # Don't auto-write in run_domain
+            result = run_domain(domain, airtable_record_id=record_id)
         except Exception as pipeline_error:
             logger.error(f"Pipeline error: {str(pipeline_error)}")
-            # Write failure status even if pipeline crashes
+            error_msg = str(pipeline_error)
             if record_id:
-                write_qa_result_to_airtable(record_id, "FAIL")
+                write_qa_result_to_airtable(record_id, "FAIL", error_msg=error_msg)
             return jsonify({
-                "error": str(pipeline_error),
+                "error": error_msg,
                 "status": "FAIL"
             }), 500
 
         # STAGE 3: Write final result back to Airtable
+        # Note: write_qa_result_to_airtable is called inside run_domain()
+        # when airtable_record_id is provided, but we also call it here
+        # to ensure error details are captured
         if record_id:
-            final_status = result.get('status', 'FAIL')  # PASS, PARTIAL, or FAIL
+            final_status = result.get('status', 'FAIL')
+            error_msg = result.get('error', '')
             logger.info(f"Writing final status '{final_status}' to Airtable")
-            write_qa_result_to_airtable(record_id, final_status)
+            write_qa_result_to_airtable(record_id, final_status, error_msg=error_msg)
 
         logger.info(f"QA run completed. Status: {result.get('status')}")
 

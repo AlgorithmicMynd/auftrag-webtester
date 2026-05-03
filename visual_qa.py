@@ -110,6 +110,7 @@ AIRTABLE_TRIGGER_CONFIG = {
     "table_name":      os.environ.get("AIRTABLE_TRIGGER_TABLE", "EMD Webseiten"),
     "domain_field":    os.environ.get("AIRTABLE_TRIGGER_DOMAIN_FIELD", "Domain"),
     "qa_result_field": os.environ.get("AIRTABLE_TRIGGER_RESULT_FIELD", "Kontakt status"),
+    "error_field":     os.environ.get("AIRTABLE_TRIGGER_ERROR_FIELD", "Kontakt error"),
 }
 
 # Airtable verification retry settings
@@ -340,14 +341,15 @@ def _map_status_to_airtable(internal_status: str) -> str:
     return "failed"  # PARTIAL and FAIL both map to failed
 
 
-def write_qa_result_to_airtable(record_id: str, status: str, cfg: dict = None) -> bool:
+def write_qa_result_to_airtable(record_id: str, status: str, cfg: dict = None, error_msg: str = "") -> bool:
     """
-    PATCH the Airtable record that triggered this QA run with the final verdict.
+    PATCH the Airtable record that triggered this QA run with the final verdict and optional error details.
 
     Args:
         record_id:  Airtable record ID, e.g. "recXXXXXXXXXXXXXX"
         status:     "PASS", "PARTIAL", or "FAIL" (internal status)
         cfg:        Airtable config dict; defaults to AIRTABLE_TRIGGER_CONFIG
+        error_msg:  Optional error message to write to error field
 
     Returns True on success, False on failure.
     """
@@ -361,7 +363,13 @@ def write_qa_result_to_airtable(record_id: str, status: str, cfg: dict = None) -
 
     airtable_status = _map_status_to_airtable(status)
     url = f"https://api.airtable.com/v0/{cfg['base_id']}/{cfg['table_name']}/{record_id}"
+
+    # Build payload: always include status, optionally include error message
     payload = {"fields": {field: airtable_status}}
+
+    error_field = cfg.get("error_field")
+    if error_msg and error_field:
+        payload["fields"][error_field] = error_msg[:500]  # Limit to 500 chars
 
     try:
         response = requests.patch(
@@ -371,7 +379,10 @@ def write_qa_result_to_airtable(record_id: str, status: str, cfg: dict = None) -
             timeout=15,
         )
         if response.status_code == 200:
-            print(f"  [INFO] Write-back OK: record {record_id} → {field} = {airtable_status}")
+            msg = f"record {record_id} → {field} = {airtable_status}"
+            if error_msg and error_field:
+                msg += f", {error_field} = {error_msg[:50]}..."
+            print(f"  [INFO] Write-back OK: {msg}")
             return True
         print(f"  [ERROR] Write-back failed (HTTP {response.status_code}): {response.text[:200]}")
         return False
@@ -644,7 +655,8 @@ def run_domain(domain: str, airtable_record_id: str = None, run_id: str = None) 
     result = asyncio.run(_run())
 
     if airtable_record_id and AIRTABLE_TRIGGER_CONFIG.get("api_key") and AIRTABLE_TRIGGER_CONFIG.get("base_id"):
-        write_qa_result_to_airtable(airtable_record_id, result["status"])
+        error_msg = result.get("error", "") or result.get("form_error", "")
+        write_qa_result_to_airtable(airtable_record_id, result["status"], error_msg=error_msg)
 
     return result
 
