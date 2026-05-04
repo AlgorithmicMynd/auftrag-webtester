@@ -21,6 +21,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def normalize_status(status: str) -> str:
+    """Convert QA status (PASS/FAIL/PARTIAL) to Airtable format (passed/failed/partial)."""
+    return status.lower() if status else "failed"
+
+
 @app.route('/run-qa', methods=['POST'])
 def run_qa():
     """
@@ -74,10 +79,10 @@ def run_qa():
             logger.error(f"Pipeline error: {str(pipeline_error)}")
             error_msg = str(pipeline_error)
             if record_id:
-                write_qa_result_to_airtable(record_id, "FAIL", error_msg=error_msg)
+                write_qa_result_to_airtable(record_id, "failed", error_msg=error_msg)
             return jsonify({
                 "error": error_msg,
-                "status": "FAIL"
+                "status": "failed"
             }), 500
 
         # STAGE 3: Write final result back to Airtable
@@ -85,7 +90,7 @@ def run_qa():
         # when airtable_record_id is provided, but we also call it here
         # to ensure error details are captured
         if record_id:
-            final_status = result.get('status', 'FAIL')
+            final_status = normalize_status(result.get('status', 'FAIL'))
             error_msg = result.get('error', '')
             logger.info(f"Writing final status '{final_status}' to Airtable")
             write_qa_result_to_airtable(record_id, final_status, error_msg=error_msg)
